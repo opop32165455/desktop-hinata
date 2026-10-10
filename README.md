@@ -51,10 +51,18 @@
 | 路径 | 内容 |
 | --- | --- |
 | `src/` | 前端（HTML / CSS / JS + 图片）。直接作为 Tauri 的前端目录，没有构建步骤 |
-| `media/` | 九个视频，H.264 4K60，共约 1GB。**不能放进 `src/`**，原因见 [AGENTS.md](AGENTS.md) |
+| `media/` | 九个视频，H.264 4K60，共约 1GB。**不在仓库里**（单文件超过 GitHub 的 100MB 限制），需要从 Google Drive 下载后放到这里，见下方「视频文件」。**不能放进 `src/`**，原因见 [AGENTS.md](AGENTS.md) |
 | `src-tauri/` | Tauri 外壳（Rust）：窗口、层级、托盘、快捷键 |
 | `tools/` | 从 WebM 母版生成视频的脚本（需要 ffmpeg） |
 | `docs/app-icon.png` | 应用图标原图（1024×1024，铺满不留透明角） |
+
+## 视频文件
+
+`media/` 下的九个 mp4（约 1GB）没有提交到 Git。请从 Google Drive 下载后整个文件夹放到项目根目录：
+
+> Google Drive 链接：`<待填写>`
+
+没有这些视频，应用和前端预览都无法播放壁纸。
 
 ## 开发
 

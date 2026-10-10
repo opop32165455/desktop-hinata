@@ -16,3 +16,6 @@ src-tauri/gen/
 
 # Logs
 *.log
+
+# 视频素材（约 1GB，存放在 Google Drive，见 README）
+media/

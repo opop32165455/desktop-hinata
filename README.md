@@ -31,7 +31,11 @@
 
 ### Windows
 
-还没有现成的安装包，需要在 Windows 机器上自己打（见下方「开发」）。Windows 10 / 11 自带 WebView2 即可运行。
+1. 运行 `Hinata_0.1.0_x64-setup.exe`，按提示安装，装完从右下角托盘的高跟鞋图标进入。
+2. 安装包已经**内嵌 WebView2 运行时**，目标机器不需要联网、也不用预装任何东西。
+3. 安装包没有签名，首次运行 SmartScreen 可能提示「未知发布者」，点「仍要运行」即可。
+
+安装包约 1.26 GB，其中约 1 GB 是 `media/` 里的九个视频。
 
 ## 怎么用
 
@@ -41,6 +45,7 @@
 | --- | --- |
 | 隐藏 / 显示壁纸 | 一键把壁纸藏起来或恢复。快捷键 `Cmd + Option + H`（Windows 为 `Ctrl + Alt + H`） |
 | 切换：可操作 / 纯壁纸 | **可操作**（默认）：能点击换装、改设置，会盖住桌面图标。**纯壁纸**：界面全部收起，桌面图标露出来，画面不可点击 |
+| 开机自启动 | 勾上后，登录系统时自动打开壁纸。默认关闭。Windows 写在 `HKCU\...\CurrentVersion\Run`，macOS 装 LaunchAgent |
 | 退出 | 关闭应用 |
 
 - 设置面板：点右上角的设置按钮打开；点面板外面任意位置、再点一次按钮或点叉都能收起。
@@ -80,10 +85,13 @@ npm run dev
 npm run build
 ```
 
-`npm run build` 的产物在 `src-tauri/target/release/bundle/`（macOS 是 `macos/Hinata.app` 和 `dmg/*.dmg`）。
+`npm run build` 的产物在 `src-tauri/target/release/bundle/`（macOS 是 `macos/Hinata.app` 和 `dmg/*.dmg`，Windows 是 `nsis/Hinata_*_x64-setup.exe`）。
 Windows 安装包必须在 Windows 上打，Mac 上打不出来。
 
-换应用图标：替换 `docs/app-icon.png` 后运行 `npm run icon`。菜单栏的单色图标是 `src-tauri/icons/tray.png`，需要单独替换。
+**在 Windows 上打包**：直接跑仓库根目录的 `build-windows.bat`，它会自动找到 MSVC 与 Windows SDK、设好编译环境，再调用项目里的 tauri CLI。加参数 `check` 可以只检查环境不构建。
+手动方式等价于先设好 `PATH` / `LIB` / `INCLUDE` 再跑 `npm run build`——Windows 上 rustc 不会自己配好 MSVC 环境，而且 Git Bash 自带的 `link.exe` 会抢占 MSVC 链接器，这两点必须显式处理。
+
+换应用图标：替换 `docs/app-icon.png` 后运行 `npm run icon`。托盘图标要单独替换：macOS 用 `src-tauri/icons/tray.png`（黑色剪影，系统按菜单栏深浅自动反色），Windows 用 `src-tauri/icons/tray-white.png`（白色剪影，Windows 没有模板图标机制）。
 
 只预览前端（没有外壳，声音始终开启）：在项目根目录运行下面的命令，然后打开 `http://localhost:8000/src/?media=../media/`。
 
@@ -105,7 +113,7 @@ tools/build-loop-media.sh
 | --- | --- |
 | macOS 应用（Apple 芯片） | 可用，已实际运行 |
 | macOS Intel 版 | 未打包 |
-| Windows 版 | 代码已写（含嵌入桌面图标层），**从未在 Windows 上编译和运行过** |
+| Windows 版 | 已能在 Windows 上编译并打出 NSIS 安装包（内嵌 WebView2）；**尚未在实际机器上运行验证** |
 | Dock 取色光晕 | 代码已写，默认关闭，未在实际画面上验证。地址加 `?glow=1` 可打开 |
 | 签名与公证 | 未做 |
 | Steam 接入、离线收益 | 未做（项目里没有金币等数值系统） |

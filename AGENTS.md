@@ -5,6 +5,7 @@
 ## 规则
 
 - 不依赖任何第三方宿主（Plash、Wallpaper Engine）或系统脚本（osascript、Apache）。不改写用户的系统壁纸、音量或任何系统设置。
+- 应用级设置（隐藏/显示壁纸、可操作/纯壁纸、开机自启动）统一放**托盘菜单**（Windows 右下角托盘图标 / macOS 菜单栏图标），不要放前端设置面板；前端设置面板只放观感与播放类偏好。开机自启动用 `tauri-plugin-autostart`。
 - 应用启动后会铺满全屏。窗口层级改错会盖住用户的所有应用和 Dock，动层级之前先读下面「窗口层级」一节，改完用 `CGWindowListCopyWindowInfo` 查实际层级再让用户试。
 - 原作归 B 站 FRAC_LAB 所有，界面里的署名和 README 的声明不要删。
 
@@ -46,13 +47,15 @@ Tauri 会把 `frontendDist`（即 `src/`）整个压缩后嵌进可执行文件�
 
 - 纯壁纸模式：把窗口 `SetParent` 到桌面图标层后面的 `WorkerW`（找不到时挂到 `Progman`，对应 Windows 11 24H2）。嵌入后鼠标事件被图标层截走，所以不可点击。
 - 可操作模式：脱离 `WorkerW`，变回 `HWND_BOTTOM` 的顶层窗口。
-- 这段代码只在 Mac 上用 `cargo check --target x86_64-pc-windows-msvc` 对单独抽出的函数做过类型检查，完整工程没在 Windows 上编译过（构建脚本需要 Windows 的资源编译器）。
+- 这段代码已经在 Windows 上编译并打出 NSIS 安装包，但**没有实际运行验证**过，窗口层级的真实表现待确认。
+- 在 Windows 上构建：用仓库根目录的 `build-windows.bat`（自动找 MSVC / Windows SDK 并设好环境），或手动设好 `PATH` / `LIB` / `INCLUDE`。rustc 不会自己配 MSVC 环境，Git Bash 自带的 `link.exe`（coreutils）还会抢占 MSVC 链接器，这两点必须显式处理。
 - `windows` crate 的版本要和 Tauri 依赖的一致（现在是 0.62），否则 `window.hwnd()` 返回的 `HWND` 类型对不上。
 
 ## 图标
 
 - macOS 26 以后，四角透明的图标会被系统缩小后塞进一块圆角底板。应用图标原图 `docs/app-icon.png` 必须铺满整个 1024 方形，圆角交给系统裁。
 - 菜单栏图标 `src-tauri/icons/tray.png` 是 44×44 的黑色剪影加透明通道，以模板图标方式加载，系统按菜单栏深浅自动显示成白或黑。
+- Windows 没有模板图标机制（`icon_as_template` 不生效），托盘改用单独的白色剪影 `src-tauri/icons/tray-white.png`——由 `tray.png` 保留 alpha、把 RGB 刷成 255 得到。换托盘图标时两张都要换。
 - `npm run icon` 会顺带生成 `icons/android`、`icons/ios`，用不到，删掉即可。
 - 换图标后访达和启动台可能还显示旧的，是系统缓存：`killall Dock Finder`。
 
@@ -61,6 +64,8 @@ Tauri 会把 `frontendDist`（即 `src/`）整个压缩后嵌进可执行文件�
 - 打包失败后可能留下一个挂载着的 `rw.*.dmg`（在 `target/release/bundle/macos/`），下一次 DMG 步骤会失败。先 `hdiutil detach` 再删掉它。
 - 安装到 `/Applications` 之前先结束正在运行的 `hinata-desktop` 进程。
 - 应用是 `Accessory` 模式：不在 Dock 显示图标，也没有自己的菜单栏。
+- Windows 走 NSIS：makensis 要压缩约 1GB 视频素材，这一步约 9 分钟属正常。产物在 `src-tauri/target/release/bundle/nsis/`，约 1.26 GB。
+- Windows 上偶发 `os error 5 拒绝访问`（写 target 下的 `.d` 文件），疑似杀软瞬时锁，删掉 `src-tauri/target` 重建即可。
 
 ## 视频素材
 

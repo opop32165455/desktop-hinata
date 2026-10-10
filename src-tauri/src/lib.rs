@@ -3,11 +3,12 @@
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::{
-    menu::{Menu, MenuItem},
+    menu::{CheckMenuItem, Menu, MenuItem},
     tray::TrayIconBuilder,
     AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, WebviewUrl, WebviewWindow,
     WebviewWindowBuilder, WindowEvent,
 };
+use tauri_plugin_autostart::{MacosLauncher, ManagerExt as AutostartExt};
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 
 static HIDDEN: AtomicBool = AtomicBool::new(false);
@@ -145,10 +146,26 @@ fn create_screen_windows(app: &AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 
+/// 读取开机自启动状态。系统里没有记录（或读不到）时按未开启处理。
+fn autostart_is_on(app: &AppHandle) -> bool {
+    app.autolaunch().is_enabled().unwrap_or(false)
+}
+
+/// 托盘图标字节：macOS 交给系统当模板图标自动反色，Windows 直接用白色剪影。
+fn tray_icon_bytes() -> &'static [u8] {
+    #[cfg(target_os = "windows")]
+    const BYTES: &[u8] = include_bytes!("../icons/tray-white.png");
+    #[cfg(not(target_os = "windows"))]
+    const BYTES: &[u8] = include_bytes!("../icons/tray.png");
+    BYTES
+}
+
 pub fn run() {
     tauri::Builder::default()
         // 只允许运行一个实例：重复启动会叠出两层全屏窗口。
         .plugin(tauri_plugin_single_instance::init(|_app, _args, _cwd| {}))
+        // 开机自启动：Windows 写 HKCU 的 Run 项，macOS 装 LaunchAgent。
+        .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, None))
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
                 .with_handler(|app, _shortcut, event| {
@@ -171,15 +188,25 @@ pub fn run() {
             // 系统托盘
             let toggle = MenuItem::with_id(app, "toggle", "隐藏 / 显示壁纸", true, None::<&str>)?;
             let interactive = MenuItem::with_id(app, "interactive", "切换：可操作 / 纯壁纸", true, None::<&str>)?;
+            // 开机自启动：菜单项自带勾选，点一下切换，状态直接写在菜单里。
+            let autostart = CheckMenuItem::with_id(app, "autostart", "开机自启动", true, autostart_is_on(app.handle()), None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&toggle, &interactive, &quit])?;
+            let menu = Menu::with_items(app, &[&toggle, &interactive, &autostart, &quit])?;
+            // 事件回调里要回写勾选状态，把菜单项句柄一起带进闭包。
+            let autostart_item = autostart.clone();
             TrayIconBuilder::new()
-                .icon(tauri::image::Image::from_bytes(include_bytes!("../icons/tray.png"))?)
-                .icon_as_template(true) // 菜单栏里只显示单色剪影，随深浅色自动变白/黑
+                .icon(tauri::image::Image::from_bytes(tray_icon_bytes())?)
+                // macOS 菜单栏用模板剪影随深浅色自动反色；Windows 无此机制，已改用白色图标。
+                .icon_as_template(cfg!(target_os = "macos"))
                 .menu(&menu)
-                .on_menu_event(|app, event| match event.id.as_ref() {
+                .on_menu_event(move |app, event| match event.id.as_ref() {
                     "toggle" => toggle_boss(app),
                     "interactive" => toggle_interactive(app),
+                    "autostart" => {
+                        let manager = app.autolaunch();
+                        let _ = if autostart_is_on(app) { manager.disable() } else { manager.enable() };
+                        let _ = autostart_item.set_checked(autostart_is_on(app));
+                    }
                     "quit" => app.exit(0),
                     _ => {}
                 })

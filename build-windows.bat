@@ -5,13 +5,26 @@ REM ------------------------------------------------------------
 REM  Prereqs : Rust (stable-x86_64-pc-windows-msvc)
 REM            Visual Studio 2022 Build Tools (C++ workload)
 REM            Node.js + `npm install` already run once in this folder
-REM  Usage   : build-windows.bat          -> full build
-REM            build-windows.bat check    -> only check the env
+REM  Usage   : build-windows.bat            -> full build (media included)
+REM            build-windows.bat nomedia    -> update build: no media, small + fast
+REM            build-windows.bat check      -> only check the env
 REM  Output  : src-tauri\target\release\bundle\nsis\*setup.exe
+REM
+REM  The "nomedia" flavour skips the ~1GB of video (see
+REM  src-tauri\tauri.nomedia.conf.json). Use it to update everything except
+REM  media on a machine that already has a full install: the installer stays
+REM  tiny, builds in a fraction of the time, and leaves the existing media\
+REM  folder untouched. It is NOT a standalone installer - media must already
+REM  be present in the install directory.
 REM ============================================================
 setlocal
 
 cd /d "%~dp0"
+
+REM ---------- 0. Build flavour ----------
+set "NOMEDIA="
+if /i "%~1"=="nomedia" set "NOMEDIA=1"
+
 set "PF86=%ProgramFiles(x86)%"
 if not defined PF86 set "PF86=C:\Program Files (x86)"
 
@@ -80,9 +93,23 @@ set "LIB=%VSPATH%\VC\Tools\MSVC\%MSVCVER%\lib\x64;%SDKROOT%\Lib\%SDKVER%\ucrt\x6
 set "INCLUDE=%VSPATH%\VC\Tools\MSVC\%MSVCVER%\include;%SDKROOT%\Include\%SDKVER%\ucrt;%SDKROOT%\Include\%SDKVER%\um;%SDKROOT%\Include\%SDKVER%\shared"
 
 REM ---------- 6. Build ----------
+set "NSISDIR=%~dp0src-tauri\target\release\bundle\nsis"
+set "TAURI_ARGS="
+
+if defined NOMEDIA (
+  REM  Both flavours write the same output filename. Set any existing full
+  REM  installer aside first, otherwise this build would clobber it.
+  for %%f in ("%NSISDIR%\Hinata_*_x64-setup.exe") do (
+    move /y "%%f" "%NSISDIR%\Hinata-full-setup.exe" >nul
+  )
+  set "TAURI_ARGS=--config src-tauri\tauri.nomedia.conf.json"
+  echo Flavour      : nomedia ^(no media, update only^)
+) else (
+  echo Flavour      : full ^(media included^)
+)
 echo Building... (first run ~15-20 min, later runs faster)
 echo.
-call "%TAURI%" build
+call "%TAURI%" build %TAURI_ARGS%
 if errorlevel 1 (
   echo.
   echo [FAILED] Build failed. See the output above.
@@ -90,9 +117,24 @@ if errorlevel 1 (
 )
 
 echo.
+if defined NOMEDIA (
+  REM  Give the media-less installer an obvious name so it can never be
+  REM  mistaken for the full one.
+  for %%f in ("%NSISDIR%\Hinata_*_x64-setup.exe") do (
+    move /y "%%f" "%NSISDIR%\Hinata-update-setup.exe" >nul
+  )
+)
+
 echo ============================================================
 echo  [OK] Installer produced:
 echo ============================================================
-dir /b "%~dp0src-tauri\target\release\bundle\nsis\*.exe"
+dir /b "%NSISDIR%\*.exe"
 echo.
+if defined NOMEDIA (
+  echo  Hinata-update-setup.exe : this build. Install it OVER an existing full
+  echo                           install. It carries no media, and the media
+  echo                           folder already on disk is left untouched.
+  echo  Hinata-full-setup.exe   : the full installer, if one was present before.
+  echo.
+)
 endlocal

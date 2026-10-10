@@ -88,8 +88,17 @@ npm run build
 `npm run build` 的产物在 `src-tauri/target/release/bundle/`（macOS 是 `macos/Hinata.app` 和 `dmg/*.dmg`，Windows 是 `nsis/Hinata_*_x64-setup.exe`）。
 Windows 安装包必须在 Windows 上打，Mac 上打不出来。
 
-**在 Windows 上打包**：直接跑仓库根目录的 `build-windows.bat`，它会自动找到 MSVC 与 Windows SDK、设好编译环境，再调用项目里的 tauri CLI。加参数 `check` 可以只检查环境不构建。
-手动方式等价于先设好 `PATH` / `LIB` / `INCLUDE` 再跑 `npm run build`——Windows 上 rustc 不会自己配好 MSVC 环境，而且 Git Bash 自带的 `link.exe` 会抢占 MSVC 链接器，这两点必须显式处理。
+**在 Windows 上打包**：直接跑仓库根目录的 `build-windows.bat`，它会自动找到 MSVC 与 Windows SDK、设好编译环境，再调用项目里的 tauri CLI。
+
+```
+build-windows.bat            完整包：带 media，约 1.26 GB（首次安装 / 换了视频时用）
+build-windows.bat nomedia    更新包：不含 media，约 20 MB（只改了代码时用）
+build-windows.bat check      只检查编译环境，不构建
+```
+
+- `nomedia` 会跳过 `media/`（见 `src-tauri/tauri.nomedia.conf.json`），并把内嵌的 WebView2 离线包换成体积很小的在线引导器，所以打包和安装都快得多。它**只能装在已经装过完整版的机器上**：视频仍从原来的安装目录读取，安装程序不会删除它们。
+- 两个 flavour 的产物文件名相同（都由 productName + version 决定），所以 `nomedia` 构建会先把已有的完整包改名成 `Hinata-full-setup.exe` 保住，构建完再把自己的产物改名成 `Hinata-update-setup.exe`。
+- 手动方式等价于先设好 `PATH` / `LIB` / `INCLUDE` 再跑 `npm run build`（`nomedia` 版额外加 `--config src-tauri/tauri.nomedia.conf.json`）——Windows 上 rustc 不会自己配好 MSVC 环境，而且 Git Bash 自带的 `link.exe` 会抢占 MSVC 链接器，这两点必须显式处理。
 
 换应用图标：替换 `docs/app-icon.png` 后运行 `npm run icon`。托盘图标要单独替换：macOS 用 `src-tauri/icons/tray.png`（黑色剪影，系统按菜单栏深浅自动反色），Windows 用 `src-tauri/icons/tray-white.png`（白色剪影，Windows 没有模板图标机制）。
 

@@ -84,12 +84,14 @@ fn set_wallpaper_mode(window: &WebviewWindow, geom: (i32, i32, u32, u32), wallpa
             // 子窗口坐标相对虚拟桌面左上角
             let vx = GetSystemMetrics(SM_XVIRTUALSCREEN);
             let vy = GetSystemMetrics(SM_YVIRTUALSCREEN);
-            let _ = SetWindowPos(hwnd, None, x - vx, y - vy, w as i32, h as i32, SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW);
+            // 这里刻意不带 SWP_SHOWWINDOW：窗口的显示统一交给 create_screen_windows 里的
+            // show()，好让「摆好层级」一定发生在「变成可见」之前。
+            let _ = SetWindowPos(hwnd, None, x - vx, y - vy, w as i32, h as i32, SWP_NOZORDER | SWP_NOACTIVATE);
         } else {
             let _ = SetParent(hwnd, None);
             SetWindowLongPtrW(hwnd, GWL_STYLE, (style & !(WS_CHILD.0 as isize)) | WS_POPUP.0 as isize);
             // 放到所有窗口最底下（桌面图标之上）：能点，但不挡其他应用和任务栏。
-            let _ = SetWindowPos(hwnd, Some(HWND_BOTTOM), x, y, w as i32, h as i32, SWP_NOACTIVATE | SWP_SHOWWINDOW);
+            let _ = SetWindowPos(hwnd, Some(HWND_BOTTOM), x, y, w as i32, h as i32, SWP_NOACTIVATE);
             let _ = window.set_always_on_bottom(true);
         }
     }
@@ -120,15 +122,25 @@ fn apply_mode(app: &AppHandle, wallpaper: bool) {
     }
 }
 
-/// 为每块显示器创建一个覆盖整屏（含 Dock 区域）的窗口。
+/// 为每块显示器创建一个覆盖整屏（含 Dock / 任务栏区域）的窗口。
 fn create_screen_windows(app: &AppHandle) -> tauri::Result<()> {
+    let mut ids = Vec::new();
     for (i, m) in app.available_monitors()?.iter().enumerate() {
-        let w = WebviewWindowBuilder::new(app, format!("screen-{i}"), WebviewUrl::App("index.html".into()))
+        let id = format!("screen-{i}");
+        let w = WebviewWindowBuilder::new(app, id.clone(), WebviewUrl::App("index.html".into()))
             .title("Hinata")
             .decorations(false)
             .shadow(false)
             .resizable(false)
             .skip_taskbar(true)
+            // 建窗时先不显示、也不抢焦点，等几何和层级都摆好再 show()。
+            // 否则会存在一个「可见 + 前台 + 覆盖整屏 + 处在 Z 序最上层」的中间态：新建的
+            // 窗口默认排在 Z 序最前，要等 apply_mode() 之后才会被压到 HWND_BOTTOM。
+            // Windows shell 一旦在这种状态下做检查，就会摘掉任务栏的 WS_EX_TOPMOST，
+            // 任务栏随之被盖住——表现为「任务栏有时消失」，而且时好时坏。
+            // 不抢焦点还让 show() 走 SW_SHOWNOACTIVATE，窗口不会闪到所有应用前面。
+            .focused(false)
+            .visible(false)
             .build()?;
         w.set_position(PhysicalPosition::new(m.position().x, m.position().y))?;
         w.set_size(PhysicalSize::new(m.size().width, m.size().height))?;
@@ -141,8 +153,15 @@ fn create_screen_windows(app: &AppHandle) -> tauri::Result<()> {
                 }
             }
         });
+        ids.push(id);
     }
+    // 先把层级摆好（此时窗口还不可见），再统一显示。
     apply_mode(app, false); // 启动为交互模式，托盘可切回壁纸模式
+    for id in &ids {
+        if let Some(w) = app.get_webview_window(id) {
+            w.show()?;
+        }
+    }
     Ok(())
 }
 

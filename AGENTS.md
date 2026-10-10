@@ -46,7 +46,12 @@ Tauri 会把 `frontendDist`（即 `src/`）整个压缩后嵌进可执行文件�
 ## Windows
 
 - 纯壁纸模式：把窗口 `SetParent` 到桌面图标层后面的 `WorkerW`（找不到时挂到 `Progman`，对应 Windows 11 24H2）。嵌入后鼠标事件被图标层截走，所以不可点击。
-- 可操作模式：脱离 `WorkerW`，变回 `HWND_BOTTOM` 的顶层窗口。
+- 可操作模式：脱离 `WorkerW`，变回 `HWND_BOTTOM` 的顶层窗口。窗口**覆盖整屏，包括任务栏那一条**——Windows 的任务栏可以是透明的，壁纸要能从底下透出来，所以不能只占工作区。
+- **任务栏会「消失」的坑**：Windows shell 检测到「覆盖整屏、且处在 Z 序最上层」的窗口时，会摘掉任务栏 `Shell_TrayWnd` 的 `WS_EX_TOPMOST`，任务栏随即被盖住。新建的窗口默认排在 Z 序最前，要等 `apply_mode()` 才被压到 `HWND_BOTTOM`——这个中间态就是竞态的窗口期，表现为「任务栏有时消失」，时好时坏。
+- 所以建窗用 `.focused(false).visible(false)`，先 `apply_mode()` 摆好层级再 `show()`；`set_wallpaper_mode()` 里也**不带 `SWP_SHOWWINDOW`**，保证「摆层级」一定早于「变可见」。不抢焦点还让 `show()` 走 `SW_SHOWNOACTIVATE`（tao 的 `MARKER_DONT_FOCUS`，见 `window_state.rs`），窗口不会闪到所有应用前面。
+- 另外 `set_always_on_bottom(true)` 会让 tao 在**每次** `WM_WINDOWPOSCHANGING` 时强制 `hwndInsertAfter = HWND_BOTTOM`（`tao/.../windows/event_loop.rs:1139`），所以窗口被压到底之后就再也回不到上层。
+- 副作用：窗口启动时不再抢焦点，所以「失焦静音」要等用户点过一次壁纸之后才生效（前端 `nativeActive` 默认 `true`）。
+- 若要更保险，可再加 `WS_EX_NOACTIVATE`（Tauri 的 `.focusable(false)`）让窗口永不成为前台窗口；代价是键盘输入和 `app-active` 焦点事件都会失效。
 - 这段代码已经在 Windows 上编译并打出 NSIS 安装包，但**没有实际运行验证**过，窗口层级的真实表现待确认。
 - 在 Windows 上构建：用仓库根目录的 `build-windows.bat`（自动找 MSVC / Windows SDK 并设好环境），或手动设好 `PATH` / `LIB` / `INCLUDE`。rustc 不会自己配 MSVC 环境，Git Bash 自带的 `link.exe`（coreutils）还会抢占 MSVC 链接器，这两点必须显式处理。
 - `windows` crate 的版本要和 Tauri 依赖的一致（现在是 0.62），否则 `window.hwnd()` 返回的 `HWND` 类型对不上。
@@ -65,6 +70,8 @@ Tauri 会把 `frontendDist`（即 `src/`）整个压缩后嵌进可执行文件�
 - 安装到 `/Applications` 之前先结束正在运行的 `hinata-desktop` 进程。
 - 应用是 `Accessory` 模式：不在 Dock 显示图标，也没有自己的菜单栏。
 - Windows 走 NSIS：makensis 要压缩约 1GB 视频素材，这一步约 9 分钟属正常。产物在 `src-tauri/target/release/bundle/nsis/`，约 1.26 GB。
+- 只改了代码、没动视频时，用 `build-windows.bat nomedia` 出轻量更新包：`--config src-tauri/tauri.nomedia.conf.json` 用 JSON Merge Patch（RFC 7396）把 `bundle.resources` 置空（数组整体替换），WebView2 也从 `offlineInstaller` 换成 `downloadBootstrapper`，所以又快又小。它**只能装在已装过完整版的机器上**——包里没有 media，视频靠原安装目录里的那份。NSIS 的 `Section Install` 只覆盖自己带的文件、不删其它文件，所以覆盖安装不会动 `media/`；但卸载程序是按当前安装包生成的，装过 nomedia 版之后卸载不再清理 `media/`，会留下约 1GB。
+- 两个 flavour 的产物文件名相同（都由 productName + version 决定）。`nomedia` 构建会先把已存在的完整包改名成 `Hinata-full-setup.exe` 保住，构建完再把自己的产物改名成 `Hinata-update-setup.exe`，两者互不覆盖。
 - Windows 上偶发 `os error 5 拒绝访问`（写 target 下的 `.d` 文件），疑似杀软瞬时锁，删掉 `src-tauri/target` 重建即可。
 
 ## 视频素材
